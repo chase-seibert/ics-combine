@@ -1,0 +1,9 @@
+calendars.toml
+combined.ics
+dist/
+tmp/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.egg-info/

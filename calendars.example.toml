@@ -1,0 +1,58 @@
+# Copy this file to calendars.toml and fill in your private URLs/secrets.
+# calendars.toml is ignored by git.
+
+[google_oauth]
+client_id = "replace-me.apps.googleusercontent.com"
+client_secret = "replace-me"
+scopes = ["https://www.googleapis.com/auth/calendar.readonly"]
+# access_token, refresh_token, token_type, and token_expiry are written by:
+#   make auth-google
+
+[s3]
+bucket = "my-calendar-feed-bucket"
+region = "us-west-2"
+profile = "default"
+# Optional: put AWS credentials directly in this gitignored config instead of
+# using environment variables or ~/.aws/credentials.
+# aws_access_key_id = "replace-me"
+# aws_secret_access_key = "replace-me"
+# aws_session_token = "replace-me"
+# Used only when no [[outputs]] are configured.
+key = "calendars/combined.ics"
+
+[[calendars]]
+id = "alice-default"
+type = "google"
+name = "Alice Default"
+calendar_id = "primary"
+color = "cornflowerblue"
+# Optional: keep generated feeds small enough for calendar clients to import.
+include_past_days = 90
+include_future_days = 730
+exclude_cancelled = true
+
+[[calendars]]
+id = "bob-default"
+type = "ics"
+name = "Bob Default"
+url = "https://example.com/private/bob.ics"
+color = "seagreen"
+
+[[calendars]]
+id = "team-holidays"
+type = "ics"
+name = "Team Holidays"
+url = "webcal://example.com/holidays.ics"
+color = "tomato"
+
+[[outputs]]
+name = "Alice Combined Feed"
+file = "dist/alice.ics"
+s3_key = "calendars/alice.ics"
+exclude_source_id = "alice-default"
+
+[[outputs]]
+name = "Bob Combined Feed"
+file = "dist/bob.ics"
+s3_key = "calendars/bob.ics"
+exclude_source_id = "bob-default"
