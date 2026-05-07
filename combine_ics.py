@@ -555,7 +555,29 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
     ]
 
 
-def build_output_calendar(output: OutputSpec, source_results: list[SourceResult]) -> IcsComponent:
+def calendar_timezone(config: dict[str, Any]) -> str | None:
+    calendar_config = config.get("calendar") or {}
+    if not isinstance(calendar_config, dict):
+        raise ConfigError("[calendar] must be a table.")
+    timezone = calendar_config.get("timezone")
+    if timezone is None:
+        return None
+    if not isinstance(timezone, str) or not timezone:
+        raise ConfigError("[calendar].timezone must be a non-empty string.")
+    try:
+        from zoneinfo import ZoneInfo
+
+        ZoneInfo(timezone)
+    except Exception as exc:
+        raise ConfigError(f"[calendar].timezone is not a valid IANA timezone: {timezone}") from exc
+    return timezone
+
+
+def build_output_calendar(
+    output: OutputSpec,
+    source_results: list[SourceResult],
+    calendar_tz: str | None = None,
+) -> IcsComponent:
     included_sources = [
         result
         for result in source_results
@@ -568,13 +590,13 @@ def build_output_calendar(output: OutputSpec, source_results: list[SourceResult]
     timezone_by_tzid: dict[str, IcsComponent] = {}
     events: list[IcsComponent] = []
     for source in included_sources:
-        for timezone in source.timezones:
-            tzid = component_property_value(timezone, "TZID")
+        for timezone_component in source.timezones:
+            tzid = component_property_value(timezone_component, "TZID")
             if tzid:
-                timezone_by_tzid.setdefault(tzid, timezone)
+                timezone_by_tzid.setdefault(tzid, timezone_component)
             else:
-                serialized = "\n".join(component_to_unfolded_lines(timezone))
-                timezone_by_content.setdefault(serialized, timezone)
+                serialized = "\n".join(component_to_unfolded_lines(timezone_component))
+                timezone_by_content.setdefault(serialized, timezone_component)
         for event in source.events:
             events.append(transform_event(event, source.name, source.color))
 
@@ -587,6 +609,8 @@ def build_output_calendar(output: OutputSpec, source_results: list[SourceResult]
         f"X-WR-CALNAME:{ics_escape_text(output.name)}",
         f"LAST-MODIFIED:{format_utc_datetime(dt.datetime.now(dt.timezone.utc))}",
     ]
+    if calendar_tz:
+        properties.insert(-1, f"X-WR-TIMEZONE:{ics_escape_text(calendar_tz)}")
     children = list(timezone_by_tzid.values()) + list(timezone_by_content.values()) + events
     return IcsComponent("VCALENDAR", properties, children)
 
@@ -597,8 +621,9 @@ def write_outputs(
     output_override: str | None = None,
 ) -> list[tuple[OutputSpec, pathlib.Path]]:
     written: list[tuple[OutputSpec, pathlib.Path]] = []
+    timezone = calendar_timezone(config)
     for output in output_specs(config, output_override):
-        calendar = build_output_calendar(output, source_results)
+        calendar = build_output_calendar(output, source_results, timezone)
         output_path = pathlib.Path(output.file)
         if output_path.parent != pathlib.Path("."):
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1335,7 +1360,7 @@ def dump_config(config: dict[str, Any]) -> str:
     if scalar_items:
         lines.append("")
 
-    for section_name in ("google_oauth", "s3"):
+    for section_name in ("calendar", "google_oauth", "s3"):
         section = config.get(section_name)
         if isinstance(section, dict):
             lines.append(f"[{section_name}]")

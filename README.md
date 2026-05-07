@@ -51,6 +51,15 @@ make test
 
 Use `calendars.example.toml` as the starting point.
 
+Optionally set a display timezone for the generated feed:
+
+```toml
+[calendar]
+timezone = "America/Los_Angeles"
+```
+
+When set, generated feeds include `X-WR-TIMEZONE`. Event-level `TZID` and `VTIMEZONE` data still control actual event times; this is a display hint for clients that understand it.
+
 Each calendar source needs a stable `id`, a human-readable `name`, and an event `color`.
 
 ICS URL source:
@@ -147,6 +156,7 @@ Uploaded objects are written with the S3 canned ACL `public-read`, so the logged
 - Original ICS event UIDs are preserved.
 - Google events use `iCalUID` when available, falling back to the Google event ID.
 - Google recurring events preserve recurrence metadata instead of expanding into a fixed date window.
+- Generated feeds include `X-WR-TIMEZONE` when `[calendar].timezone` is configured.
 - Sources can optionally filter old/far-future events with `include_past_days` and `include_future_days`.
 - Sources can optionally remove cancelled events with `exclude_cancelled = true`.
 - Event fields such as title, start/end, recurrence metadata, attendees, attendee response status, location, description, organizer, alarms, and vendor fields are preserved where available.

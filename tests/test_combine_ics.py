@@ -298,6 +298,36 @@ class OutputSelectionTests(unittest.TestCase):
         self.assertEqual(1, len(timezones))
         self.assertEqual("America/Los_Angeles", combine_ics.component_property_value(timezones[0], "TZID"))
 
+    def test_build_output_calendar_adds_configured_timezone_hint(self):
+        calendar = combine_ics.build_output_calendar(
+            combine_ics.OutputSpec("Combined", "combined.ics", None, None),
+            [self.make_source("a", "A")],
+            "America/Los_Angeles",
+        )
+
+        self.assertIn("X-WR-TIMEZONE:America/Los_Angeles", calendar.properties)
+
+    def test_calendar_timezone_validates_iana_name(self):
+        self.assertEqual(
+            "America/Los_Angeles",
+            combine_ics.calendar_timezone(
+                {"calendar": {"timezone": "America/Los_Angeles"}}
+            ),
+        )
+        with self.assertRaises(combine_ics.ConfigError):
+            combine_ics.calendar_timezone({"calendar": {"timezone": "Not/AZone"}})
+
+    def test_dump_config_preserves_calendar_section(self):
+        text = combine_ics.dump_config(
+            {
+                "calendar": {"timezone": "America/Los_Angeles"},
+                "calendars": [],
+            }
+        )
+
+        self.assertIn("[calendar]", text)
+        self.assertIn('timezone = "America/Los_Angeles"', text)
+
     def test_source_window_filters_old_single_events_but_keeps_active_recurrence(self):
         today = dt.datetime.now(dt.timezone.utc).date()
         old_date = (today - dt.timedelta(days=800)).strftime("%Y%m%d")

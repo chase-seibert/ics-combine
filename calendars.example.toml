@@ -1,6 +1,9 @@
 # Copy this file to calendars.toml and fill in your private URLs/secrets.
 # calendars.toml is ignored by git.
 
+[calendar]
+timezone = "America/Los_Angeles"
+
 [google_oauth]
 client_id = "replace-me.apps.googleusercontent.com"
 client_secret = "replace-me"
