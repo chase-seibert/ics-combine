@@ -77,6 +77,7 @@ class OutputSpec:
     s3_key: str | None
     include_source_ids: list[str] | None
     skip_description: bool = False
+    skip_attendees: bool = False
 
 
 @dataclasses.dataclass
@@ -162,6 +163,9 @@ def validate_config(config: dict[str, Any]) -> None:
         skip_description = output.get("skip_description")
         if skip_description is not None and not isinstance(skip_description, bool):
             raise ConfigError(f"Output #{index} skip_description must be a boolean.")
+        skip_attendees = output.get("skip_attendees")
+        if skip_attendees is not None and not isinstance(skip_attendees, bool):
+            raise ConfigError(f"Output #{index} skip_attendees must be a boolean.")
 
     s3_config = config.get("s3")
     if s3_config is not None:
@@ -381,6 +385,7 @@ def transform_event(
     source_name: str,
     color: str,
     skip_description: bool = False,
+    skip_attendees: bool = False,
 ) -> IcsComponent:
     transformed = event.clone()
     transformed.properties = [
@@ -388,6 +393,7 @@ def transform_event(
         for prop in transformed.properties
         if property_name(prop) != "COLOR"
         and (not skip_description or property_name(prop) != "DESCRIPTION")
+        and (not skip_attendees or property_name(prop) != "ATTENDEE")
     ]
     if not skip_description:
         append_source_to_description(transformed, source_name)
@@ -585,6 +591,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
                 s3_key=output.get("s3_key"),
                 include_source_ids=list(output["include_source_ids"]),
                 skip_description=output.get("skip_description", False),
+                skip_attendees=output.get("skip_attendees", False),
             )
             for output in configured_outputs
         ]
@@ -597,6 +604,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
             s3_key=s3_config.get("key"),
             include_source_ids=None,
             skip_description=False,
+            skip_attendees=False,
         )
     ]
 
@@ -654,6 +662,7 @@ def build_output_calendar(
                     source.name,
                     source.color,
                     skip_description=output.skip_description,
+                    skip_attendees=output.skip_attendees,
                 )
             )
 

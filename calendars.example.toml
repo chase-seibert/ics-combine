@@ -58,6 +58,8 @@ s3_key = "calendars/alice.ics"
 include_source_ids = ["bob-default", "team-holidays"]
 # Optional: omit the top-level VEVENT DESCRIPTION field from this output.
 # skip_description = true
+# Optional: omit top-level VEVENT ATTENDEE fields from this output.
+# skip_attendees = true
 
 [[outputs]]
 name = "Bob Combined Feed"
