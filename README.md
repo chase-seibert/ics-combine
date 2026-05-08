@@ -163,8 +163,9 @@ Uploaded objects are written with the S3 canned ACL `public-read`, so the logged
 - Generated feeds include `X-WR-TIMEZONE` when `[calendar].timezone` is configured.
 - Sources can optionally filter old/far-future events with `include_past_days` and `include_future_days`.
 - Sources can optionally remove cancelled events with `exclude_cancelled = true`.
+- Outputs can optionally remove top-level event descriptions with `skip_description = true`.
 - Event fields such as title, start/end, recurrence metadata, attendees, attendee response status, location, description, organizer, alarms, and vendor fields are preserved where available.
-- The source calendar name is appended to each event description.
+- The source calendar name is appended to each event description unless `skip_description = true`.
 - Each event gets a standards-compliant RFC 7986 `COLOR` property from its parent calendar source.
 - If one source fails, it is skipped with a warning. If an output has no successful included sources, the command exits nonzero.
 

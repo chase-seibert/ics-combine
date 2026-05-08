@@ -50,6 +50,40 @@ class IcsParsingTests(unittest.TestCase):
         self.assertIn("BEGIN:VALARM", rendered)
         self.assertIn("TRIGGER:-PT10M", rendered)
 
+    def test_transform_event_can_skip_event_description(self):
+        root = combine_ics.parse_ics(
+            "\r\n".join(
+                [
+                    "BEGIN:VCALENDAR",
+                    "VERSION:2.0",
+                    "BEGIN:VEVENT",
+                    "UID:event-1",
+                    "SUMMARY:Demo",
+                    "DESCRIPTION:Existing description",
+                    "BEGIN:VALARM",
+                    "TRIGGER:-PT10M",
+                    "ACTION:DISPLAY",
+                    "DESCRIPTION:Reminder",
+                    "END:VALARM",
+                    "END:VEVENT",
+                    "END:VCALENDAR",
+                    "",
+                ]
+            )
+        )
+        event = root.children[0]
+        transformed = combine_ics.transform_event(
+            event,
+            "Work Calendar",
+            "turquoise",
+            skip_description=True,
+        )
+        rendered = "\n".join(combine_ics.component_to_unfolded_lines(transformed))
+
+        self.assertNotIn("DESCRIPTION:Existing description", rendered)
+        self.assertNotIn("Source calendar: Work Calendar", rendered)
+        self.assertIn("DESCRIPTION:Reminder", rendered)
+
 
 class FetchTests(unittest.TestCase):
     class FakeResponse:
@@ -268,6 +302,63 @@ class OutputSelectionTests(unittest.TestCase):
             self.assertNotIn("UID:alice-event", text)
             self.assertIn("UID:bob-event", text)
             self.assertIn("Source calendar: Bob", text)
+
+    def test_explicit_output_can_skip_event_descriptions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = pathlib.Path(tmpdir) / "bob.ics"
+            config = {
+                "calendars": [
+                    {
+                        "id": "bob",
+                        "type": "ics",
+                        "name": "Bob",
+                        "url": "https://example.com/b.ics",
+                        "color": "blue",
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "Bob Feed",
+                        "file": str(output_file),
+                        "include_source_ids": ["bob"],
+                        "skip_description": True,
+                    }
+                ],
+            }
+            source = self.make_source("bob", "Bob")
+            source.events[0].properties.append("DESCRIPTION:Private notes")
+
+            combine_ics.validate_config(config)
+            combine_ics.write_outputs(config, [source])
+
+            text = output_file.read_text(encoding="utf-8")
+            self.assertIn("UID:bob-event", text)
+            self.assertNotIn("DESCRIPTION:Private notes", text)
+            self.assertNotIn("Source calendar: Bob", text)
+
+    def test_validate_config_rejects_non_boolean_skip_description(self):
+        with self.assertRaises(combine_ics.ConfigError):
+            combine_ics.validate_config(
+                {
+                    "calendars": [
+                        {
+                            "id": "bob",
+                            "type": "ics",
+                            "name": "Bob",
+                            "url": "https://example.com/b.ics",
+                            "color": "blue",
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "Bob Feed",
+                            "file": "bob.ics",
+                            "include_source_ids": ["bob"],
+                            "skip_description": "yes",
+                        }
+                    ],
+                }
+            )
 
     def test_existing_output_files_uses_files_without_sources(self):
         with tempfile.TemporaryDirectory() as tmpdir:

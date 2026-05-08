@@ -76,6 +76,7 @@ class OutputSpec:
     file: str
     s3_key: str | None
     include_source_ids: list[str] | None
+    skip_description: bool = False
 
 
 @dataclasses.dataclass
@@ -158,6 +159,9 @@ def validate_config(config: dict[str, Any]) -> None:
         s3_key = output.get("s3_key")
         if s3_key is not None and (not isinstance(s3_key, str) or not s3_key):
             raise ConfigError(f"Output #{index} s3_key must be a non-empty string.")
+        skip_description = output.get("skip_description")
+        if skip_description is not None and not isinstance(skip_description, bool):
+            raise ConfigError(f"Output #{index} skip_description must be a boolean.")
 
     s3_config = config.get("s3")
     if s3_config is not None:
@@ -372,12 +376,21 @@ def quote_param(value: str) -> str:
     return escaped
 
 
-def transform_event(event: IcsComponent, source_name: str, color: str) -> IcsComponent:
+def transform_event(
+    event: IcsComponent,
+    source_name: str,
+    color: str,
+    skip_description: bool = False,
+) -> IcsComponent:
     transformed = event.clone()
     transformed.properties = [
-        prop for prop in transformed.properties if property_name(prop) != "COLOR"
+        prop
+        for prop in transformed.properties
+        if property_name(prop) != "COLOR"
+        and (not skip_description or property_name(prop) != "DESCRIPTION")
     ]
-    append_source_to_description(transformed, source_name)
+    if not skip_description:
+        append_source_to_description(transformed, source_name)
     transformed.properties.append(f"COLOR:{ics_escape_text(color)}")
     return transformed
 
@@ -567,6 +580,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
                 file=output["file"],
                 s3_key=output.get("s3_key"),
                 include_source_ids=list(output["include_source_ids"]),
+                skip_description=output.get("skip_description", False),
             )
             for output in configured_outputs
         ]
@@ -578,6 +592,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
             file=output_override or DEFAULT_OUTPUT_PATH,
             s3_key=s3_config.get("key"),
             include_source_ids=None,
+            skip_description=False,
         )
     ]
 
@@ -629,7 +644,14 @@ def build_output_calendar(
                 serialized = "\n".join(component_to_unfolded_lines(timezone_component))
                 timezone_by_content.setdefault(serialized, timezone_component)
         for event in source.events:
-            events.append(transform_event(event, source.name, source.color))
+            events.append(
+                transform_event(
+                    event,
+                    source.name,
+                    source.color,
+                    skip_description=output.skip_description,
+                )
+            )
 
     properties = [
         "PRODID:-//ics-combine//EN",
