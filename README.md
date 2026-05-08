@@ -139,6 +139,8 @@ Configure the destination bucket and region:
 bucket = "my-calendar-feed-bucket"
 region = "us-west-2"
 profile = "default"
+# Optional: upload gzipped bytes and serve them as the same ICS content.
+gzip = true
 # Optional, if you want this gitignored TOML file to carry AWS credentials.
 aws_access_key_id = "replace-me"
 aws_secret_access_key = "replace-me"
@@ -148,6 +150,8 @@ aws_session_token = "replace-me"
 Each output should provide its own `s3_key`. If no explicit outputs are configured, `[s3].key` is used for the single combined feed.
 
 AWS credentials are read from `[s3]` first when `aws_access_key_id` and `aws_secret_access_key` are set, then from environment variables, then from the shared AWS credentials/config files. The upload is implemented directly in Python with AWS Signature Version 4.
+
+Set `[s3].gzip = true` to gzip the object before upload and store it with `Content-Encoding: gzip`. The S3 key can remain `*.ics`; HTTP clients that honor content encodings will decompress the stream and see the same calendar contents.
 
 Uploaded objects are written with the S3 canned ACL `public-read`, so the logged HTTP URL can be used by calendar clients. The bucket must allow ACLs and the AWS credentials need permission to set the object ACL.
 

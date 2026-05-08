@@ -11,6 +11,7 @@ import base64
 import configparser
 import dataclasses
 import datetime as dt
+import gzip
 import hashlib
 import hmac
 import http.server
@@ -158,11 +159,26 @@ def validate_config(config: dict[str, Any]) -> None:
         if s3_key is not None and (not isinstance(s3_key, str) or not s3_key):
             raise ConfigError(f"Output #{index} s3_key must be a non-empty string.")
 
+    s3_config = config.get("s3")
+    if s3_config is not None:
+        if not isinstance(s3_config, dict):
+            raise ConfigError("[s3] must be a table.")
+        s3_gzip_enabled(s3_config)
+
 
 def require_string(table: dict[str, Any], key: str, context: str) -> str:
     value = table.get(key)
     if not isinstance(value, str) or not value:
         raise ConfigError(f"{context} must define non-empty string {key!r}.")
+    return value
+
+
+def s3_gzip_enabled(s3_config: dict[str, Any]) -> bool:
+    value = s3_config.get("gzip")
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise ConfigError("[s3].gzip must be a boolean if present.")
     return value
 
 
@@ -1469,14 +1485,27 @@ def upload_outputs_to_s3(
     region = configured_region or env_region
     if not isinstance(region, str) or not region:
         raise ConfigError("S3 region must be set in [s3].region or AWS config.")
+    gzip_upload = s3_gzip_enabled(s3_config)
+    content_encoding = "gzip" if gzip_upload else None
 
     for output, path in written:
         key = output.s3_key or s3_config.get("key")
         if not isinstance(key, str) or not key:
             raise ConfigError(f"Output {output.name!r} does not define an S3 key.")
         body = path.read_bytes()
-        upload_to_s3(bucket, key, region, credentials, body)
+        if gzip_upload:
+            body = gzip.compress(body, mtime=0)
+        upload_to_s3(
+            bucket,
+            key,
+            region,
+            credentials,
+            body,
+            content_encoding=content_encoding,
+        )
         print(f"Uploaded s3://{bucket}/{key}")
+        if content_encoding:
+            print(f"Content-Encoding: {content_encoding}")
         print(f"HTTP URL: {s3_https_url(bucket, key, region)}")
 
 
@@ -1492,8 +1521,17 @@ def upload_to_s3(
     credentials: AwsCredentials,
     body: bytes,
     now: dt.datetime | None = None,
+    content_encoding: str | None = None,
 ) -> int:
-    request = build_s3_put_request(bucket, key, region, credentials, body, now)
+    request = build_s3_put_request(
+        bucket,
+        key,
+        region,
+        credentials,
+        body,
+        now,
+        content_encoding=content_encoding,
+    )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             return response.status
@@ -1509,6 +1547,7 @@ def build_s3_put_request(
     credentials: AwsCredentials,
     body: bytes,
     now: dt.datetime | None = None,
+    content_encoding: str | None = None,
 ) -> urllib.request.Request:
     if now is None:
         now = dt.datetime.now(dt.timezone.utc)
@@ -1528,6 +1567,8 @@ def build_s3_put_request(
         "X-Amz-Content-Sha256": payload_hash,
         "X-Amz-Date": amz_date,
     }
+    if content_encoding:
+        headers["Content-Encoding"] = content_encoding
     if credentials.session_token:
         headers["X-Amz-Security-Token"] = credentials.session_token
 

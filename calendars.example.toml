@@ -15,6 +15,9 @@ scopes = ["https://www.googleapis.com/auth/calendar.readonly"]
 bucket = "my-calendar-feed-bucket"
 region = "us-west-2"
 profile = "default"
+# Optional: upload gzipped bytes and serve them with Content-Encoding: gzip.
+# Downloaders that honor HTTP content encoding still receive the original ICS text.
+gzip = true
 # Optional: put AWS credentials directly in this gitignored config instead of
 # using environment variables or ~/.aws/credentials.
 # aws_access_key_id = "replace-me"

@@ -1,5 +1,6 @@
 import contextlib
 import datetime as dt
+import gzip
 import io
 import pathlib
 import tempfile
@@ -584,6 +585,24 @@ class AuthAndS3Tests(unittest.TestCase):
             authorization,
         )
 
+    def test_s3_request_can_mark_gzip_content_encoding(self):
+        request = combine_ics.build_s3_put_request(
+            bucket="calendar-bucket",
+            key="feeds/alice.ics",
+            region="us-west-2",
+            credentials=combine_ics.AwsCredentials("AKIDEXAMPLE", "SECRET"),
+            body=b"\x1f\x8bcompressed",
+            now=dt.datetime(2026, 5, 7, 12, 0, 0, tzinfo=dt.timezone.utc),
+            content_encoding="gzip",
+        )
+
+        self.assertEqual("gzip", request.get_header("Content-encoding"))
+        authorization = request.get_header("Authorization")
+        self.assertIn(
+            "SignedHeaders=content-encoding;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date",
+            authorization,
+        )
+
     def test_s3_https_url_escapes_key_segments(self):
         self.assertEqual(
             "https://calendar-bucket.s3.us-west-2.amazonaws.com/feeds/alice%20calendar.ics",
@@ -623,6 +642,76 @@ class AuthAndS3Tests(unittest.TestCase):
             "HTTP URL: https://calendar-bucket.s3.us-west-2.amazonaws.com/feeds/generated.ics",
             text,
         )
+
+    def test_upload_outputs_can_gzip_s3_body(self):
+        output_path = pathlib.Path("generated.ics")
+        config = {
+            "s3": {
+                "bucket": "calendar-bucket",
+                "region": "us-west-2",
+                "aws_access_key_id": "access",
+                "aws_secret_access_key": "secret",
+                "gzip": True,
+            }
+        }
+        output = combine_ics.OutputSpec(
+            "Generated",
+            str(output_path),
+            "feeds/generated.ics",
+            None,
+        )
+        uploaded = {}
+
+        def fake_upload_to_s3(
+            bucket,
+            key,
+            region,
+            credentials,
+            body,
+            now=None,
+            content_encoding=None,
+        ):
+            uploaded.update(
+                {
+                    "bucket": bucket,
+                    "key": key,
+                    "region": region,
+                    "body": body,
+                    "content_encoding": content_encoding,
+                }
+            )
+            return 200
+
+        stdout = io.StringIO()
+        with mock.patch.object(pathlib.Path, "read_bytes", return_value=b"ics"):
+            with mock.patch.object(
+                combine_ics, "upload_to_s3", side_effect=fake_upload_to_s3
+            ):
+                with contextlib.redirect_stdout(stdout):
+                    combine_ics.upload_outputs_to_s3(config, [(output, output_path)])
+
+        self.assertEqual("calendar-bucket", uploaded["bucket"])
+        self.assertEqual("feeds/generated.ics", uploaded["key"])
+        self.assertEqual("gzip", uploaded["content_encoding"])
+        self.assertEqual(b"ics", gzip.decompress(uploaded["body"]))
+        self.assertIn("Content-Encoding: gzip", stdout.getvalue())
+
+    def test_validate_config_rejects_non_boolean_s3_gzip(self):
+        with self.assertRaises(combine_ics.ConfigError):
+            combine_ics.validate_config(
+                {
+                    "s3": {"gzip": "yes"},
+                    "calendars": [
+                        {
+                            "id": "alice",
+                            "type": "ics",
+                            "name": "Alice",
+                            "url": "https://example.com/a.ics",
+                            "color": "red",
+                        }
+                    ],
+                }
+            )
 
     def test_s3_config_credentials_take_precedence(self):
         with mock.patch.dict(
