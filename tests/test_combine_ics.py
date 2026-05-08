@@ -225,20 +225,36 @@ class OutputSelectionTests(unittest.TestCase):
         )
         return combine_ics.SourceResult(source_id, name, "turquoise", [event], [])
 
-    def test_explicit_output_excludes_configured_source(self):
+    def test_explicit_output_includes_configured_sources(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_file = pathlib.Path(tmpdir) / "bob.ics"
             config = {
-                "calendars": [],
+                "calendars": [
+                    {
+                        "id": "alice",
+                        "type": "ics",
+                        "name": "Alice",
+                        "url": "https://example.com/a.ics",
+                        "color": "red",
+                    },
+                    {
+                        "id": "bob",
+                        "type": "ics",
+                        "name": "Bob",
+                        "url": "https://example.com/b.ics",
+                        "color": "blue",
+                    },
+                ],
                 "outputs": [
                     {
                         "name": "Bob Feed",
                         "file": str(output_file),
                         "s3_key": "feeds/bob.ics",
-                        "exclude_source_id": "alice",
+                        "include_source_ids": ["bob"],
                     }
                 ],
             }
+            combine_ics.validate_config(config)
             written = combine_ics.write_outputs(
                 config,
                 [
@@ -434,7 +450,7 @@ class OutputSelectionTests(unittest.TestCase):
         self.assertIn("timeMax", first_query)
         self.assertEqual("next", second_query["pageToken"])
 
-    def test_validate_config_rejects_missing_excluded_source(self):
+    def test_validate_config_rejects_removed_exclude_source_id(self):
         with self.assertRaises(combine_ics.ConfigError):
             combine_ics.validate_config(
                 {
@@ -451,7 +467,31 @@ class OutputSelectionTests(unittest.TestCase):
                         {
                             "name": "Bad",
                             "file": "bad.ics",
-                            "exclude_source_id": "missing",
+                            "include_source_ids": ["alice"],
+                            "exclude_source_id": "alice",
+                        }
+                    ],
+                }
+            )
+
+    def test_validate_config_rejects_unknown_included_source(self):
+        with self.assertRaises(combine_ics.ConfigError):
+            combine_ics.validate_config(
+                {
+                    "calendars": [
+                        {
+                            "id": "alice",
+                            "type": "ics",
+                            "name": "Alice",
+                            "url": "https://example.com/a.ics",
+                            "color": "red",
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "Bad",
+                            "file": "bad.ics",
+                            "include_source_ids": ["missing"],
                         }
                     ],
                 }

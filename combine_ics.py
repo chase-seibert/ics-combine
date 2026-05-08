@@ -74,7 +74,7 @@ class OutputSpec:
     name: str
     file: str
     s3_key: str | None
-    exclude_source_id: str | None
+    include_source_ids: list[str] | None
 
 
 @dataclasses.dataclass
@@ -135,13 +135,24 @@ def validate_config(config: dict[str, Any]) -> None:
             raise ConfigError(f"Output #{index} must be a table.")
         require_string(output, "name", f"output #{index}")
         require_string(output, "file", f"output #{index}")
-        exclude_source_id = output.get("exclude_source_id")
-        if exclude_source_id is not None:
-            if not isinstance(exclude_source_id, str) or not exclude_source_id:
-                raise ConfigError(f"Output #{index} exclude_source_id must be a string.")
-            if exclude_source_id not in seen_ids:
+        if "exclude_source_id" in output:
+            raise ConfigError(
+                f"Output #{index} uses removed field exclude_source_id; "
+                "use include_source_ids instead."
+            )
+        include_source_ids = output.get("include_source_ids")
+        if not isinstance(include_source_ids, list) or not include_source_ids:
+            raise ConfigError(
+                f"Output #{index} must define non-empty include_source_ids array."
+            )
+        for source_id in include_source_ids:
+            if not isinstance(source_id, str) or not source_id:
                 raise ConfigError(
-                    f"Output #{index} excludes unknown source id {exclude_source_id!r}."
+                    f"Output #{index} include_source_ids must contain only strings."
+                )
+            if source_id not in seen_ids:
+                raise ConfigError(
+                    f"Output #{index} includes unknown source id {source_id!r}."
                 )
         s3_key = output.get("s3_key")
         if s3_key is not None and (not isinstance(s3_key, str) or not s3_key):
@@ -539,7 +550,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
                 name=output["name"],
                 file=output["file"],
                 s3_key=output.get("s3_key"),
-                exclude_source_id=output.get("exclude_source_id"),
+                include_source_ids=list(output["include_source_ids"]),
             )
             for output in configured_outputs
         ]
@@ -550,7 +561,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
             name="Combined Calendar",
             file=output_override or DEFAULT_OUTPUT_PATH,
             s3_key=s3_config.get("key"),
-            exclude_source_id=None,
+            include_source_ids=None,
         )
     ]
 
@@ -578,11 +589,15 @@ def build_output_calendar(
     source_results: list[SourceResult],
     calendar_tz: str | None = None,
 ) -> IcsComponent:
-    included_sources = [
-        result
-        for result in source_results
-        if result.source_id != output.exclude_source_id
-    ]
+    if output.include_source_ids is None:
+        included_sources = source_results
+    else:
+        result_by_id = {result.source_id: result for result in source_results}
+        included_sources = [
+            result_by_id[source_id]
+            for source_id in output.include_source_ids
+            if source_id in result_by_id
+        ]
     if not included_sources:
         raise FetchError(f"Output {output.name!r} has no successful included sources.")
 
@@ -648,10 +663,12 @@ def existing_output_files(
 
 
 def output_event_count(output: OutputSpec, source_results: list[SourceResult]) -> int:
+    if output.include_source_ids is None:
+        return sum(len(source.events) for source in source_results)
     return sum(
         len(source.events)
         for source in source_results
-        if source.source_id != output.exclude_source_id
+        if source.source_id in set(output.include_source_ids)
     )
 
 

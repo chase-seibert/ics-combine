@@ -93,14 +93,14 @@ The optional `include_past_days` and `include_future_days` fields keep large cal
 
 For Google Calendar sources, the same window is also sent to the Google Calendar API as `timeMin` and `timeMax`, which avoids downloading the full calendar history. Set `exclude_cancelled = true` on a source to request `showDeleted=false` from Google and remove events whose ICS status is `CANCELLED` locally. This is especially useful where cancelled meetings may otherwise appear as recurrence exceptions or deleted events.
 
-When `[[outputs]]` entries are configured, only those feeds are generated. Each output includes all successful sources except `exclude_source_id`.
+When `[[outputs]]` entries are configured, only those feeds are generated. Each output lists the source IDs that should go into it.
 
 ```toml
 [[outputs]]
 name = "Alice Combined Feed"
 file = "dist/alice.ics"
 s3_key = "calendars/alice.ics"
-exclude_source_id = "alice-default"
+include_source_ids = ["bob-default", "team-holidays"]
 ```
 
 If no `[[outputs]]` entries are configured, the tool writes one combined feed containing all successful sources. The default path is `combined.ics`, or whatever is passed with `--output`.

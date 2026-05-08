@@ -52,10 +52,10 @@ color = "tomato"
 name = "Alice Combined Feed"
 file = "dist/alice.ics"
 s3_key = "calendars/alice.ics"
-exclude_source_id = "alice-default"
+include_source_ids = ["bob-default", "team-holidays"]
 
 [[outputs]]
 name = "Bob Combined Feed"
 file = "dist/bob.ics"
 s3_key = "calendars/bob.ics"
-exclude_source_id = "bob-default"
+include_source_ids = ["alice-default", "team-holidays"]
