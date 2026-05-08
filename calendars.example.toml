@@ -31,6 +31,7 @@ id = "alice-default"
 type = "google"
 name = "Alice Default"
 calendar_id = "primary"
+# Optional: fallback event color when a source event has no COLOR property.
 color = "cornflowerblue"
 # Optional: keep generated feeds small enough for calendar clients to import.
 include_past_days = 90
@@ -42,6 +43,7 @@ id = "bob-default"
 type = "ics"
 name = "Bob Default"
 url = "https://example.com/private/bob.ics"
+# Optional: fallback event color when a source event has no COLOR property.
 color = "seagreen"
 
 [[calendars]]
@@ -49,6 +51,7 @@ id = "team-holidays"
 type = "ics"
 name = "Team Holidays"
 url = "webcal://example.com/holidays.ics"
+# Optional: fallback event color when a source event has no COLOR property.
 color = "tomato"
 
 [[outputs]]
@@ -60,6 +63,8 @@ include_source_ids = ["bob-default", "team-holidays"]
 # skip_description = true
 # Optional: omit top-level VEVENT ATTENDEE fields from this output.
 # skip_attendees = true
+# Optional: omit top-level VEVENT COLOR fields from this output.
+# skip_color = true
 
 [[outputs]]
 name = "Bob Combined Feed"

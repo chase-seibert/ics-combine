@@ -45,7 +45,7 @@ class IcsParsingTests(unittest.TestCase):
         )
         self.assertNotIn("\n", text.replace("\r\n", ""))
 
-    def test_transform_event_preserves_nested_alarm_and_appends_source(self):
+    def test_transform_event_preserves_event_color_and_appends_source(self):
         root = combine_ics.parse_ics(
             "\r\n".join(
                 [
@@ -71,11 +71,80 @@ class IcsParsingTests(unittest.TestCase):
         transformed = combine_ics.transform_event(event, "Work Calendar", "turquoise")
         rendered = "\n".join(combine_ics.component_to_unfolded_lines(transformed))
 
-        self.assertIn("COLOR:turquoise", rendered)
-        self.assertNotIn("COLOR:red", rendered)
+        self.assertIn("COLOR:red", rendered)
+        self.assertNotIn("COLOR:turquoise", rendered)
         self.assertIn("Existing description\\n\\nSource calendar: Work Calendar", rendered)
         self.assertIn("BEGIN:VALARM", rendered)
         self.assertIn("TRIGGER:-PT10M", rendered)
+
+    def test_transform_event_uses_source_color_when_event_has_no_color(self):
+        root = combine_ics.parse_ics(
+            "\r\n".join(
+                [
+                    "BEGIN:VCALENDAR",
+                    "VERSION:2.0",
+                    "BEGIN:VEVENT",
+                    "UID:event-1",
+                    "SUMMARY:Demo",
+                    "END:VEVENT",
+                    "END:VCALENDAR",
+                    "",
+                ]
+            )
+        )
+        event = root.children[0]
+        transformed = combine_ics.transform_event(event, "Work Calendar", "turquoise")
+        rendered = "\n".join(combine_ics.component_to_unfolded_lines(transformed))
+
+        self.assertIn("COLOR:turquoise", rendered)
+
+    def test_transform_event_can_skip_color(self):
+        root = combine_ics.parse_ics(
+            "\r\n".join(
+                [
+                    "BEGIN:VCALENDAR",
+                    "VERSION:2.0",
+                    "BEGIN:VEVENT",
+                    "UID:event-1",
+                    "SUMMARY:Demo",
+                    "COLOR:red",
+                    "END:VEVENT",
+                    "END:VCALENDAR",
+                    "",
+                ]
+            )
+        )
+        event = root.children[0]
+        transformed = combine_ics.transform_event(
+            event,
+            "Work Calendar",
+            "turquoise",
+            skip_color=True,
+        )
+        rendered = "\n".join(combine_ics.component_to_unfolded_lines(transformed))
+
+        self.assertNotIn("COLOR:", rendered)
+
+    def test_transform_event_omits_color_when_event_and_source_have_none(self):
+        root = combine_ics.parse_ics(
+            "\r\n".join(
+                [
+                    "BEGIN:VCALENDAR",
+                    "VERSION:2.0",
+                    "BEGIN:VEVENT",
+                    "UID:event-1",
+                    "SUMMARY:Demo",
+                    "END:VEVENT",
+                    "END:VCALENDAR",
+                    "",
+                ]
+            )
+        )
+        event = root.children[0]
+        transformed = combine_ics.transform_event(event, "Work Calendar")
+        rendered = "\n".join(combine_ics.component_to_unfolded_lines(transformed))
+
+        self.assertNotIn("COLOR:", rendered)
 
     def test_transform_event_can_skip_event_description(self):
         root = combine_ics.parse_ics(
@@ -309,16 +378,19 @@ class GoogleConversionTests(unittest.TestCase):
 
 
 class OutputSelectionTests(unittest.TestCase):
-    def make_source(self, source_id, name):
+    def make_source(self, source_id, name, color="turquoise", event_color=None):
+        properties = [
+            f"UID:{source_id}-event",
+            f"SUMMARY:{name}",
+        ]
+        if event_color is not None:
+            properties.append(f"COLOR:{event_color}")
         event = combine_ics.IcsComponent(
             "VEVENT",
-            [
-                f"UID:{source_id}-event",
-                f"SUMMARY:{name}",
-            ],
+            properties,
             [],
         )
-        return combine_ics.SourceResult(source_id, name, "turquoise", [event], [])
+        return combine_ics.SourceResult(source_id, name, color, [event], [])
 
     def test_explicit_output_includes_configured_sources(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -511,6 +583,111 @@ class OutputSelectionTests(unittest.TestCase):
             self.assertNotIn("ATTENDEE;PARTSTAT=ACCEPTED", text)
             self.assertNotIn("ATTENDEE;PARTSTAT=NEEDS-ACTION", text)
 
+    def test_explicit_output_can_skip_event_colors(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = pathlib.Path(tmpdir) / "bob.ics"
+            config = {
+                "calendars": [
+                    {
+                        "id": "bob",
+                        "type": "ics",
+                        "name": "Bob",
+                        "url": "https://example.com/b.ics",
+                        "color": "blue",
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "Bob Feed",
+                        "file": str(output_file),
+                        "include_source_ids": ["bob"],
+                        "skip_color": True,
+                    }
+                ],
+            }
+            source = self.make_source("bob", "Bob", color="turquoise", event_color="red")
+
+            combine_ics.validate_config(config)
+            combine_ics.write_outputs(config, [source])
+
+            text = output_file.read_text(encoding="utf-8")
+            self.assertIn("UID:bob-event", text)
+            self.assertNotIn("COLOR:", text)
+
+    def test_output_preserves_event_color_over_source_fallback(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = pathlib.Path(tmpdir) / "bob.ics"
+            config = {
+                "calendars": [
+                    {
+                        "id": "bob",
+                        "type": "ics",
+                        "name": "Bob",
+                        "url": "https://example.com/b.ics",
+                        "color": "blue",
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "Bob Feed",
+                        "file": str(output_file),
+                        "include_source_ids": ["bob"],
+                    }
+                ],
+            }
+            source = self.make_source("bob", "Bob", color="turquoise", event_color="red")
+
+            combine_ics.validate_config(config)
+            combine_ics.write_outputs(config, [source])
+
+            text = output_file.read_text(encoding="utf-8")
+            self.assertIn("COLOR:red", text)
+            self.assertNotIn("COLOR:turquoise", text)
+
+    def test_validate_config_allows_missing_source_color(self):
+        combine_ics.validate_config(
+            {
+                "calendars": [
+                    {
+                        "id": "bob",
+                        "type": "ics",
+                        "name": "Bob",
+                        "url": "https://example.com/b.ics",
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "Bob Feed",
+                        "file": "bob.ics",
+                        "include_source_ids": ["bob"],
+                    }
+                ],
+            }
+        )
+
+    def test_validate_config_rejects_empty_source_color_if_present(self):
+        with self.assertRaises(combine_ics.ConfigError):
+            combine_ics.validate_config(
+                {
+                    "calendars": [
+                        {
+                            "id": "bob",
+                            "type": "ics",
+                            "name": "Bob",
+                            "url": "https://example.com/b.ics",
+                            "color": "",
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "Bob Feed",
+                            "file": "bob.ics",
+                            "include_source_ids": ["bob"],
+                        }
+                    ],
+                }
+            )
+
     def test_validate_config_rejects_non_boolean_skip_description(self):
         with self.assertRaises(combine_ics.ConfigError):
             combine_ics.validate_config(
@@ -554,6 +731,30 @@ class OutputSelectionTests(unittest.TestCase):
                             "file": "bob.ics",
                             "include_source_ids": ["bob"],
                             "skip_attendees": "yes",
+                        }
+                    ],
+                }
+            )
+
+    def test_validate_config_rejects_non_boolean_skip_color(self):
+        with self.assertRaises(combine_ics.ConfigError):
+            combine_ics.validate_config(
+                {
+                    "calendars": [
+                        {
+                            "id": "bob",
+                            "type": "ics",
+                            "name": "Bob",
+                            "url": "https://example.com/b.ics",
+                            "color": "blue",
+                        }
+                    ],
+                    "outputs": [
+                        {
+                            "name": "Bob Feed",
+                            "file": "bob.ics",
+                            "include_source_ids": ["bob"],
+                            "skip_color": "yes",
                         }
                     ],
                 }

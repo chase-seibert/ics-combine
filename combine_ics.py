@@ -65,7 +65,7 @@ class IcsComponent:
 class SourceResult:
     source_id: str
     name: str
-    color: str
+    color: str | None
     events: list[IcsComponent]
     timezones: list[IcsComponent]
 
@@ -78,6 +78,7 @@ class OutputSpec:
     include_source_ids: list[str] | None
     skip_description: bool = False
     skip_attendees: bool = False
+    skip_color: bool = False
 
 
 @dataclasses.dataclass
@@ -117,7 +118,8 @@ def validate_config(config: dict[str, Any]) -> None:
             raise ConfigError(f"Duplicate calendar source id: {source_id}")
         seen_ids.add(source_id)
         require_string(source, "name", f"calendar source {source_id}")
-        require_string(source, "color", f"calendar source {source_id}")
+        if "color" in source:
+            require_string(source, "color", f"calendar source {source_id}")
         source_type = require_string(source, "type", f"calendar source {source_id}")
         if source_type == "ics":
             require_string(source, "url", f"calendar source {source_id}")
@@ -166,6 +168,9 @@ def validate_config(config: dict[str, Any]) -> None:
         skip_attendees = output.get("skip_attendees")
         if skip_attendees is not None and not isinstance(skip_attendees, bool):
             raise ConfigError(f"Output #{index} skip_attendees must be a boolean.")
+        skip_color = output.get("skip_color")
+        if skip_color is not None and not isinstance(skip_color, bool):
+            raise ConfigError(f"Output #{index} skip_color must be a boolean.")
 
     s3_config = config.get("s3")
     if s3_config is not None:
@@ -383,21 +388,27 @@ def quote_param(value: str) -> str:
 def transform_event(
     event: IcsComponent,
     source_name: str,
-    color: str,
+    color: str | None = None,
     skip_description: bool = False,
     skip_attendees: bool = False,
+    skip_color: bool = False,
 ) -> IcsComponent:
     transformed = event.clone()
     transformed.properties = [
         prop
         for prop in transformed.properties
-        if property_name(prop) != "COLOR"
+        if (not skip_color or property_name(prop) != "COLOR")
         and (not skip_description or property_name(prop) != "DESCRIPTION")
         and (not skip_attendees or property_name(prop) != "ATTENDEE")
     ]
     if not skip_description:
         append_source_to_description(transformed, source_name)
-    transformed.properties.append(f"COLOR:{ics_escape_text(color)}")
+    if (
+        not skip_color
+        and color is not None
+        and not any(property_name(prop) == "COLOR" for prop in transformed.properties)
+    ):
+        transformed.properties.append(f"COLOR:{ics_escape_text(color)}")
     return transformed
 
 
@@ -535,7 +546,7 @@ def extract_ics_source(source: dict[str, Any]) -> SourceResult:
     return SourceResult(
         source_id=source["id"],
         name=source["name"],
-        color=source["color"],
+        color=source.get("color"),
         events=events,
         timezones=timezones,
     )
@@ -592,6 +603,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
                 include_source_ids=list(output["include_source_ids"]),
                 skip_description=output.get("skip_description", False),
                 skip_attendees=output.get("skip_attendees", False),
+                skip_color=output.get("skip_color", False),
             )
             for output in configured_outputs
         ]
@@ -605,6 +617,7 @@ def output_specs(config: dict[str, Any], output_override: str | None = None) -> 
             include_source_ids=None,
             skip_description=False,
             skip_attendees=False,
+            skip_color=False,
         )
     ]
 
@@ -663,6 +676,7 @@ def build_output_calendar(
                     source.color,
                     skip_description=output.skip_description,
                     skip_attendees=output.skip_attendees,
+                    skip_color=output.skip_color,
                 )
             )
 
@@ -1077,7 +1091,7 @@ def extract_google_source(
     return SourceResult(
         source_id=source["id"],
         name=source["name"],
-        color=source["color"],
+        color=source.get("color"),
         events=events,
         timezones=[],
     )
