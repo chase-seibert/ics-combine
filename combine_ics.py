@@ -571,6 +571,10 @@ def format_count(count: int, label: str) -> str:
     return f"{count} {label}{suffix}"
 
 
+def format_kb(byte_count: int) -> str:
+    return f"{byte_count / 1024:.1f} KB"
+
+
 def output_specs(config: dict[str, Any], output_override: str | None = None) -> list[OutputSpec]:
     configured_outputs = config.get("outputs") or []
     if configured_outputs:
@@ -722,9 +726,10 @@ def combine_command(args: argparse.Namespace) -> int:
         written = write_outputs(config, source_results, args.output)
         for output, path in written:
             item_count = output_event_count(output, source_results)
+            size = format_kb(path.stat().st_size)
             print(
                 f"Wrote {path} ({output.name}, "
-                f"{format_count(item_count, 'calendar item')})"
+                f"{format_count(item_count, 'calendar item')}, {size})"
             )
         if args.push_s3:
             upload_outputs_to_s3(config, written)
@@ -740,7 +745,10 @@ def upload_command(args: argparse.Namespace) -> int:
         config = load_config(config_path)
         existing = existing_output_files(config, args.output)
         for output, path in existing:
-            print(f"Uploading existing {path} ({output.name})")
+            print(
+                f"Uploading existing {path} "
+                f"({output.name}, {format_kb(path.stat().st_size)})"
+            )
         upload_outputs_to_s3(config, existing)
         return 0
     except (ConfigError, FetchError, OSError, urllib.error.URLError) as exc:

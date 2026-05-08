@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import datetime as dt
 import gzip
@@ -358,6 +359,51 @@ class OutputSelectionTests(unittest.TestCase):
             self.assertIn("SUMMARY:🥗 DNS: Lunch".encode("utf-8"), body)
             self.assertIn("SUMMARY:🥗 DNS: Lunch", body.decode("utf-8"))
             self.assertNotIn(b"\n", body.replace(b"\r\n", b""))
+
+    def test_combine_command_logs_output_size_in_kb(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = pathlib.Path(tmpdir) / "calendars.toml"
+            output_file = pathlib.Path(tmpdir) / "lunch.ics"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "[[calendars]]",
+                        'id = "lunch"',
+                        'type = "ics"',
+                        'name = "Lunch"',
+                        'url = "https://example.com/lunch.ics"',
+                        'color = "green"',
+                        "",
+                        "[[outputs]]",
+                        'name = "Lunch Feed"',
+                        f'file = "{output_file}"',
+                        'include_source_ids = ["lunch"]',
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            args = argparse.Namespace(
+                config=str(config_path),
+                output=None,
+                push_s3=False,
+            )
+
+            with mock.patch.object(
+                combine_ics,
+                "fetch_all_sources",
+                return_value=([self.make_source("lunch", "Lunch")], []),
+            ):
+                with contextlib.redirect_stdout(stdout):
+                    exit_code = combine_ics.combine_command(args)
+
+            self.assertEqual(0, exit_code)
+            expected_size = combine_ics.format_kb(output_file.stat().st_size)
+            self.assertIn(
+                f"Wrote {output_file} (Lunch Feed, 1 calendar item, {expected_size})",
+                stdout.getvalue(),
+            )
 
     def test_explicit_output_can_skip_event_descriptions(self):
         with tempfile.TemporaryDirectory() as tmpdir:
