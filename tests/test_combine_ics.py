@@ -18,6 +18,32 @@ class IcsParsingTests(unittest.TestCase):
         unfolded = combine_ics.unfold_ics_lines("\r\n".join(folded))
         self.assertEqual([line], unfolded)
 
+    def test_fold_ics_line_limits_physical_lines_to_75_utf8_octets(self):
+        line = "SUMMARY:🥗 DNS: Lunch " + ("x" * 90)
+        folded = combine_ics.fold_ics_line(line)
+
+        self.assertGreater(len(folded), 1)
+        self.assertTrue(
+            all(len(physical_line.encode("utf-8")) <= 75 for physical_line in folded)
+        )
+        self.assertTrue(all(physical_line.startswith(" ") for physical_line in folded[1:]))
+        self.assertEqual([line], combine_ics.unfold_ics_lines("\r\n".join(folded)))
+
+    def test_serialize_calendar_uses_crlf_line_endings(self):
+        component = combine_ics.IcsComponent(
+            "VCALENDAR",
+            ["VERSION:2.0", "SUMMARY:Demo"],
+            [],
+        )
+
+        text = combine_ics.serialize_calendar(component)
+
+        self.assertEqual(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nSUMMARY:Demo\r\nEND:VCALENDAR\r\n",
+            text,
+        )
+        self.assertNotIn("\n", text.replace("\r\n", ""))
+
     def test_transform_event_preserves_nested_alarm_and_appends_source(self):
         root = combine_ics.parse_ics(
             "\r\n".join(
@@ -302,6 +328,36 @@ class OutputSelectionTests(unittest.TestCase):
             self.assertNotIn("UID:alice-event", text)
             self.assertIn("UID:bob-event", text)
             self.assertIn("Source calendar: Bob", text)
+
+    def test_write_outputs_writes_utf8_bytes_with_crlf(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_file = pathlib.Path(tmpdir) / "lunch.ics"
+            config = {
+                "calendars": [
+                    {
+                        "id": "lunch",
+                        "type": "ics",
+                        "name": "Lunch",
+                        "url": "https://example.com/lunch.ics",
+                        "color": "green",
+                    }
+                ],
+                "outputs": [
+                    {
+                        "name": "Lunch Feed",
+                        "file": str(output_file),
+                        "include_source_ids": ["lunch"],
+                    }
+                ],
+            }
+
+            combine_ics.validate_config(config)
+            combine_ics.write_outputs(config, [self.make_source("lunch", "🥗 DNS: Lunch")])
+
+            body = output_file.read_bytes()
+            self.assertIn("SUMMARY:🥗 DNS: Lunch".encode("utf-8"), body)
+            self.assertIn("SUMMARY:🥗 DNS: Lunch", body.decode("utf-8"))
+            self.assertNotIn(b"\n", body.replace(b"\r\n", b""))
 
     def test_explicit_output_can_skip_event_descriptions(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -665,6 +721,7 @@ class AuthAndS3Tests(unittest.TestCase):
             request.full_url,
         )
         self.assertEqual("PUT", request.get_method())
+        self.assertEqual("text/calendar; charset=utf-8", request.get_header("Content-type"))
         self.assertEqual("public-read", request.get_header("X-amz-acl"))
         self.assertEqual("20260507T120000Z", request.get_header("X-amz-date"))
         self.assertEqual("session-token", request.get_header("X-amz-security-token"))

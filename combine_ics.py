@@ -680,7 +680,7 @@ def write_outputs(
         output_path = pathlib.Path(output.file)
         if output_path.parent != pathlib.Path("."):
             output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(serialize_calendar(calendar), encoding="utf-8")
+        output_path.write_bytes(serialize_calendar(calendar).encode("utf-8"))
         written.append((output, output_path))
     return written
 
