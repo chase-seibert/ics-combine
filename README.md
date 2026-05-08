@@ -181,14 +181,3 @@ python3 combine_ics.py upload --config calendars.toml
 python3 combine_ics.py auth-google --config calendars.toml
 python3 combine_ics.py list-google-calendars --config calendars.toml
 ```
-
-## Calendar.app Import Troubleshooting
-
-If macOS Calendar says it cannot read an imported calendar file, first check the generated file size and event count:
-
-```sh
-ls -lh dist/*.ics
-rg -c '^BEGIN:VEVENT' dist/seibert-combined.ics
-```
-
-Very large Google calendars can produce tens of thousands of historical events. Add `include_past_days` and `include_future_days` to the large source, rerun `make combine`, and import the smaller generated file into a temporary Calendar.app calendar.
